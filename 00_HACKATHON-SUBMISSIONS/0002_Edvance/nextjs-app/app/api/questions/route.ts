@@ -262,7 +262,8 @@ export async function POST(request: NextRequest) {
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            profilePicture: true
           }
         },
         _count: {
@@ -283,6 +284,7 @@ export async function POST(request: NextRequest) {
       content: question.content,
       tags: JSON.parse(question.tags || '[]'),
       username: question.author.name,
+      authorProfilePicture: question.author.profilePicture,
       created_at: question.createdAt.toISOString(),
       answer_count: question._count.answers,
       votes: 0,
@@ -301,6 +303,100 @@ export async function POST(request: NextRequest) {
       error: 'Failed to create question', 
       details: errorMessage
     }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { questionId, title, content, tags, userId } = await request.json()
+
+    if (!questionId || !userId) {
+      return NextResponse.json({ error: 'Question ID and User ID required' }, { status: 400 })
+    }
+
+    if (!title?.trim() || !content?.trim()) {
+      return NextResponse.json({ error: 'Title and content are required' }, { status: 400 })
+    }
+
+    // Find the question to check permissions
+    const question = await prisma.question.findUnique({
+      where: { id: questionId },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            profilePicture: true
+          }
+        },
+        _count: {
+          select: {
+            answers: true,
+            votes: true
+          }
+        }
+      }
+    })
+
+    if (!question) {
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+
+    // Check if user can edit (only question author)
+    if (question.authorId !== userId) {
+      return NextResponse.json({ error: 'Unauthorized to edit this question' }, { status: 403 })
+    }
+
+    // Update the question
+    const updatedQuestion = await prisma.question.update({
+      where: { id: questionId },
+      data: {
+        title: title.trim(),
+        content: content.trim(),
+        tags: JSON.stringify(tags || []),
+        updatedAt: new Date()
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            profilePicture: true
+          }
+        },
+        _count: {
+          select: {
+            answers: true,
+            votes: true
+          }
+        }
+      }
+    })
+
+    // Transform to match frontend interface
+    const transformedQuestion = {
+      id: updatedQuestion.id,
+      title: updatedQuestion.title,
+      content: updatedQuestion.content,
+      tags: JSON.parse(updatedQuestion.tags || '[]'),
+      username: updatedQuestion.author.name,
+      authorProfilePicture: updatedQuestion.author.profilePicture,
+      created_at: updatedQuestion.createdAt.toISOString(),
+      updated_at: updatedQuestion.updatedAt.toISOString(),
+      answer_count: updatedQuestion._count.answers,
+      votes: 0, // Will be calculated by the frontend
+      authorId: updatedQuestion.author.id
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      question: transformedQuestion 
+    })
+  } catch (error) {
+    console.error('Error updating question:', error)
+    return NextResponse.json({ error: 'Failed to update question' }, { status: 500 })
   }
 }
 

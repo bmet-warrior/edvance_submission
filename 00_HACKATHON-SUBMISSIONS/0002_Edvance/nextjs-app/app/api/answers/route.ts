@@ -125,6 +125,95 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const { answerId, content, userId } = await request.json()
+
+    if (!answerId || !userId) {
+      return NextResponse.json({ error: 'Answer ID and User ID required' }, { status: 400 })
+    }
+
+    if (!content?.trim()) {
+      return NextResponse.json({ error: 'Content is required' }, { status: 400 })
+    }
+
+    // Find the answer to check permissions
+    const answer = await prisma.answer.findUnique({
+      where: { id: answerId },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            profilePicture: true
+          }
+        },
+        _count: {
+          select: {
+            votes: true
+          }
+        }
+      }
+    })
+
+    if (!answer) {
+      return NextResponse.json({ error: 'Answer not found' }, { status: 404 })
+    }
+
+    // Check if user can edit (only answer author)
+    if (answer.authorId !== userId) {
+      return NextResponse.json({ error: 'Unauthorized to edit this answer' }, { status: 403 })
+    }
+
+    // Update the answer
+    const updatedAnswer = await prisma.answer.update({
+      where: { id: answerId },
+      data: {
+        content: content.trim(),
+        updatedAt: new Date()
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            profilePicture: true
+          }
+        },
+        _count: {
+          select: {
+            votes: true
+          }
+        }
+      }
+    })
+
+    // Transform to match frontend interface
+    const transformedAnswer = {
+      id: updatedAnswer.id,
+      question_id: parseInt(updatedAnswer.questionId.slice(-8), 16),
+      content: updatedAnswer.content,
+      username: updatedAnswer.author.name,
+      authorProfilePicture: updatedAnswer.author.profilePicture,
+      created_at: updatedAnswer.createdAt.toISOString(),
+      updated_at: updatedAnswer.updatedAt.toISOString(),
+      is_ai_generated: updatedAnswer.isAiGenerated,
+      votes: 0, // Will be calculated by the frontend
+      authorId: updatedAnswer.author.id
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      answer: transformedAnswer 
+    })
+  } catch (error) {
+    console.error('Error updating answer:', error)
+    return NextResponse.json({ error: 'Failed to update answer' }, { status: 500 })
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)

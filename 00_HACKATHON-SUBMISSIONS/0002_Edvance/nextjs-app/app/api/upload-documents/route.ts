@@ -196,10 +196,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only teachers can upload documents' }, { status: 403 })
     }
 
-    // Verify the class exists
+    // Verify the class exists (try by ID or code)
     console.log('Verifying class:', classId)
-    const classExists = await prisma.class.findUnique({
-      where: { id: classId }
+    const classExists = await prisma.class.findFirst({
+      where: {
+        OR: [
+          { id: classId },
+          { code: classId.toUpperCase() }
+        ]
+      }
     })
 
     if (!classExists) {
@@ -264,7 +269,7 @@ export async function POST(request: NextRequest) {
         content: textContent,
         size: file.size,
         uploaderId,
-        classId
+        classId: classExists.id  // Use the actual class ID from the database
       },
       include: {
         uploader: {

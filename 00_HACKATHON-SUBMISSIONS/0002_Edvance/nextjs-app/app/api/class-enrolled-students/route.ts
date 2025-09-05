@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
             degree: true,
             major: true,
             role: true,
+            profilePicture: true,
             createdAt: true
           }
         }

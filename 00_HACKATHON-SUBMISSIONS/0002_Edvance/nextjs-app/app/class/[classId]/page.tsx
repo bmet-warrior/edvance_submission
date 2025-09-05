@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Plus, Users, BookOpen, LogOut, ArrowLeft, Search, Bot, GraduationCap, User, ChevronUp, ChevronDown, Trash2, Download, Eye, FileText, File } from 'lucide-react'
+import { MessageSquare, Plus, Users, BookOpen, LogOut, ArrowLeft, Search, Bot, GraduationCap, User, ChevronUp, ChevronDown, Trash2, Download, Eye, FileText, File, Edit } from 'lucide-react'
 import { MarkdownRendererWrapper } from '../../../components/RichTextEditorWrapper'
 import Toast from '../../../components/Toast'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -96,6 +96,17 @@ export default function ClassForum() {
   const [votingQuestionId, setVotingQuestionId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [userProfilePicture, setUserProfilePicture] = useState('')
+  
+  // Edit/Delete state
+  const [editingQuestion, setEditingQuestion] = useState<any>(null)
+  const [editQuestionTitle, setEditQuestionTitle] = useState('')
+  const [editQuestionContent, setEditQuestionContent] = useState('')
+  const [editQuestionTags, setEditQuestionTags] = useState<string[]>([])
+  const [showEditQuestionModal, setShowEditQuestionModal] = useState(false)
+  
+  const [editingAnswer, setEditingAnswer] = useState<any>(null)
+  const [editAnswerContent, setEditAnswerContent] = useState('')
+  const [showEditAnswerModal, setShowEditAnswerModal] = useState(false)
 
   // Debug function to log profile picture state
   const setUserProfilePictureWithLog = (picture: string) => {
@@ -471,6 +482,158 @@ export default function ClassForum() {
       setToast({ message: 'Network error. Please check your connection and try again.', type: 'error' })
     } finally {
       setVotingQuestionId(null)
+    }
+  }
+
+  const handleEditQuestion = (question: any) => {
+    // Set the question to edit mode
+    setEditingQuestion(question)
+    setEditQuestionTitle(question.title)
+    setEditQuestionContent(question.content)
+    setEditQuestionTags(question.tags || [])
+    setShowEditQuestionModal(true)
+  }
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!user) return
+
+    if (!confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/questions?questionId=${questionId}&userId=${user.id}&userRole=${user.role}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Remove the question from the list
+        setQuestions(prev => prev.filter(q => q.id !== questionId))
+        setToast({ message: 'Question deleted successfully!', type: 'success' })
+      } else {
+        setToast({ message: data.error || 'Failed to delete question', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error deleting question:', error)
+      setToast({ message: 'Network error. Please try again.', type: 'error' })
+    }
+  }
+
+  const handleUpdateQuestion = async () => {
+    if (!editingQuestion || !user) return
+
+    if (!editQuestionTitle.trim() || !editQuestionContent.trim()) {
+      setToast({ message: 'Title and content are required', type: 'error' })
+      return
+    }
+
+    try {
+      const response = await fetch('/api/questions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questionId: editingQuestion.id,
+          title: editQuestionTitle,
+          content: editQuestionContent,
+          tags: editQuestionTags,
+          userId: user.id
+        }),
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Update the question in the list
+        setQuestions(prev => prev.map(q => 
+          q.id === editingQuestion.id 
+            ? { ...q, ...data.question }
+            : q
+        ))
+        setToast({ message: 'Question updated successfully!', type: 'success' })
+        setShowEditQuestionModal(false)
+        setEditingQuestion(null)
+      } else {
+        setToast({ message: data.error || 'Failed to update question', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error updating question:', error)
+      setToast({ message: 'Network error. Please try again.', type: 'error' })
+    }
+  }
+
+  const handleEditAnswer = (answer: any) => {
+    // Set the answer to edit mode
+    setEditingAnswer(answer)
+    setEditAnswerContent(answer.content)
+    setShowEditAnswerModal(true)
+  }
+
+  const handleDeleteAnswer = async (answerId: string) => {
+    if (!user) return
+
+    if (!confirm('Are you sure you want to delete this answer? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/answers?answerId=${answerId}&userId=${user.id}&userRole=${user.role}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Remove the answer from the list
+        setAnswers(prev => prev.filter(a => a.id !== answerId))
+        setToast({ message: 'Answer deleted successfully!', type: 'success' })
+      } else {
+        setToast({ message: data.error || 'Failed to delete answer', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error deleting answer:', error)
+      setToast({ message: 'Network error. Please try again.', type: 'error' })
+    }
+  }
+
+  const handleUpdateAnswer = async () => {
+    if (!editingAnswer || !user) return
+
+    if (!editAnswerContent.trim()) {
+      setToast({ message: 'Content is required', type: 'error' })
+      return
+    }
+
+    try {
+      const response = await fetch('/api/answers', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          answerId: editingAnswer.id,
+          content: editAnswerContent,
+          userId: user.id
+        }),
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Update the answer in the list
+        setAnswers(prev => prev.map(a => 
+          a.id === editingAnswer.id 
+            ? { ...a, ...data.answer }
+            : a
+        ))
+        setToast({ message: 'Answer updated successfully!', type: 'success' })
+        setShowEditAnswerModal(false)
+        setEditingAnswer(null)
+      } else {
+        setToast({ message: data.error || 'Failed to update answer', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error updating answer:', error)
+      setToast({ message: 'Network error. Please try again.', type: 'error' })
     }
   }
 
@@ -1014,6 +1177,32 @@ export default function ClassForum() {
                                         #{index + 1}
                                       </span>
                                     )}
+                                    
+                                    {/* Edit/Delete Buttons for Question Author */}
+                                    {user && question.authorId === user.id && (
+                                      <div className="flex items-center space-x-1">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleEditQuestion(question)
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                          title="Edit question"
+                                        >
+                                          <Edit className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleDeleteQuestion(question.id)
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                          title="Delete question"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1333,8 +1522,20 @@ export default function ClassForum() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center space-x-3 mb-2">
-                              <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                <User className="h-5 w-5 text-blue-600" />
+                              <div className="h-10 w-10 rounded-full flex items-center justify-center overflow-hidden">
+                                {student.profilePicture ? (
+                                  <img
+                                    src={student.profilePicture}
+                                    alt={student.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                    <span className="text-sm font-semibold text-white">
+                                      {(student.name || 'U')[0].toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                               <div>
                                 <h4 className="text-lg font-medium text-gray-900">{student.name}</h4>

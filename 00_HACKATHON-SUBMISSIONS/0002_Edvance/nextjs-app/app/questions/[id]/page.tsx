@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronUp, ChevronDown, MessageSquare, User, Clock, Download, Code, FileText } from 'lucide-react'
+import { ArrowLeft, ChevronUp, ChevronDown, MessageSquare, User, Clock, Download, Code, FileText, Edit, Trash2 } from 'lucide-react'
 import RichTextEditorWrapper, { MarkdownRendererWrapper } from '../../../components/RichTextEditorWrapper'
 import ExpandableAnswer from '../../../components/ExpandableAnswer'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -52,6 +52,11 @@ export default function QuestionDetail() {
   const [answersLoading, setAnswersLoading] = useState(false)
   const [newAnswer, setNewAnswer] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  
+  // Edit/Delete state
+  const [editingAnswer, setEditingAnswer] = useState<any>(null)
+  const [editAnswerContent, setEditAnswerContent] = useState('')
+  const [showEditAnswerModal, setShowEditAnswerModal] = useState(false)
 
   const fetchQuestion = async () => {
     try {
@@ -185,6 +190,77 @@ export default function QuestionDetail() {
       }
     } catch (error) {
       console.error('Error downloading source document:', error)
+    }
+  }
+
+  const handleEditAnswer = (answer: any) => {
+    // Set the answer to edit mode
+    setEditingAnswer(answer)
+    setEditAnswerContent(answer.content)
+    setShowEditAnswerModal(true)
+  }
+
+  const handleDeleteAnswer = async (answerId: string) => {
+    if (!user) return
+
+    if (!confirm('Are you sure you want to delete this answer? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/answers?answerId=${answerId}&userId=${user.id}&userRole=${user.role}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Remove the answer from the list
+        setAnswers(prev => prev.filter(a => a.id !== answerId))
+        // Update the question's answer count
+        setQuestion(prev => prev ? { ...prev, answer_count: prev.answer_count - 1 } : null)
+      } else {
+        console.error('Failed to delete answer:', data.error)
+      }
+    } catch (error) {
+      console.error('Error deleting answer:', error)
+    }
+  }
+
+  const handleUpdateAnswer = async () => {
+    if (!editingAnswer || !user) return
+
+    if (!editAnswerContent.trim()) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/answers', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          answerId: editingAnswer.id,
+          content: editAnswerContent,
+          userId: user.id
+        }),
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Update the answer in the list
+        setAnswers(prev => prev.map(a => 
+          a.id === editingAnswer.id 
+            ? { ...a, ...data.answer }
+            : a
+        ))
+        setShowEditAnswerModal(false)
+        setEditingAnswer(null)
+      } else {
+        console.error('Failed to update answer:', data.error)
+      }
+    } catch (error) {
+      console.error('Error updating answer:', error)
     }
   }
 
@@ -406,6 +482,32 @@ export default function QuestionDetail() {
                               <span className="font-medium">{answer.username}</span>
                             </div>
                             <span>Answered {new Date(answer.created_at).toLocaleDateString()}</span>
+                            
+                            {/* Edit/Delete Buttons for Answer Author */}
+                            {user && answer.authorId === user.id && (
+                              <div className="flex items-center space-x-1 ml-3">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleEditAnswer(answer)
+                                  }}
+                                  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                  title="Edit answer"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteAnswer(answer.id)
+                                  }}
+                                  className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete answer"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                           
                           <div className="flex items-center space-x-2">
@@ -469,6 +571,40 @@ export default function QuestionDetail() {
           </div>
         </div>
       </div>
+
+      {/* Edit Answer Modal */}
+      {showEditAnswerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4">
+            <h2 className="text-xl font-bold mb-4">Edit Answer</h2>
+            <div className="mb-4">
+              <RichTextEditorWrapper
+                content={editAnswerContent}
+                onChange={setEditAnswerContent}
+                placeholder="Edit your answer..."
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowEditAnswerModal(false)
+                  setEditingAnswer(null)
+                  setEditAnswerContent('')
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateAnswer}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Update Answer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ProtectedRoute>
   )
 }
