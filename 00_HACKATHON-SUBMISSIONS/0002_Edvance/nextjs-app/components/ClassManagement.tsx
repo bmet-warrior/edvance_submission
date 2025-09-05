@@ -89,26 +89,44 @@ export default function ClassManagement({ classes, onClassCreated, onClassDelete
     setShowEditForm(true)
   }
 
-  const handleUpdateClass = () => {
+  const handleUpdateClass = async () => {
     if (!editingClass || !editClass.name.trim() || !editClass.code.trim()) return
 
-    const updatedClass: Class = {
-      ...editingClass,
-      name: editClass.name,
-      code: editClass.code,
-      semester: editClass.semester || 'Current Semester',
-      description: editClass.description || 'Advanced study of course materials and collaborative learning.',
-      instructor: editClass.instructor || user?.name || 'Teacher'
-    }
+    try {
+      const response = await fetch('/api/classes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingClass.id,
+          name: editClass.name,
+          code: editClass.code,
+          semester: editClass.semester || 'Current Semester',
+          description: editClass.description || 'Advanced study of course materials and collaborative learning.',
+          teacherId: user?.id
+        })
+      })
 
-    if (onClassUpdated) {
-      onClassUpdated(updatedClass)
-    }
+      const data = await response.json()
 
-    // Reset form
-    setEditClass({ name: '', code: '', semester: '', description: '', instructor: '' })
-    setEditingClass(null)
-    setShowEditForm(false)
+      if (response.ok && data.class) {
+        if (onClassUpdated) {
+          onClassUpdated(data.class)
+        }
+        
+        // Reset form
+        setEditClass({ name: '', code: '', semester: '', description: '', instructor: '' })
+        setEditingClass(null)
+        setShowEditForm(false)
+      } else {
+        console.error('Failed to update class:', data.error)
+        alert(`Failed to update class: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error updating class:', error)
+      alert('Failed to update class. Please try again.')
+    }
   }
 
   return (

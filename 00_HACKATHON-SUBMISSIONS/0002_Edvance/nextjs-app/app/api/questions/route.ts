@@ -14,8 +14,23 @@ export async function GET(request: NextRequest) {
     // Get current timestamp for age calculations
     const now = new Date()
 
+    // First, try to find the class by ID or code
+    let actualClassId = classId
+    const classRecord = await prisma.class.findFirst({
+      where: {
+        OR: [
+          { id: classId },
+          { code: classId.toUpperCase() }
+        ]
+      }
+    })
+    
+    if (classRecord) {
+      actualClassId = classRecord.id
+    }
+
     const questions = await prisma.question.findMany({
-      where: { classId },
+      where: { classId: actualClassId },
       include: {
         author: {
           select: {

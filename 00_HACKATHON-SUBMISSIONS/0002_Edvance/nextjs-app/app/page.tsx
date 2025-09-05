@@ -369,20 +369,16 @@ export default function ClassDashboard() {
 
   const handleClassUpdated = async (updatedClass: any) => {
     try {
-      const response = await fetch('/api/classes', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...updatedClass,
-          teacherId: user?.id
-        })
-      })
+      // Update the local state immediately for better UX
+      setClasses(prevClasses => 
+        prevClasses.map(cls => 
+          cls.id === updatedClass.id ? updatedClass : cls
+        )
+      )
       
-      const data = await response.json()
-      if (data.success) {
-        await fetchClasses() // Refresh the classes list
-        await fetchStats() // Refresh the stats
-      }
+      // Refresh the classes list to ensure consistency
+      await fetchClasses()
+      await fetchStats()
     } catch (error) {
       console.error('Error updating class:', error)
     }

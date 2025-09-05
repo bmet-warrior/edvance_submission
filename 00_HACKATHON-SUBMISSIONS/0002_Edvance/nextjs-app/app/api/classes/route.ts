@@ -148,6 +148,84 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const { id, name, code, description, semester, teacherId } = await request.json()
+
+    if (!id || !name || !code || !teacherId) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Verify user is the teacher of this class
+    const existingClass = await prisma.class.findUnique({
+      where: { id }
+    })
+
+    if (!existingClass || existingClass.teacherId !== teacherId) {
+      return NextResponse.json({ error: 'Unauthorized to update this class' }, { status: 403 })
+    }
+
+    // Check if new class code conflicts with existing classes (excluding current class)
+    if (code !== existingClass.code) {
+      const codeConflict = await prisma.class.findFirst({
+        where: { 
+          code,
+          id: { not: id }
+        }
+      })
+
+      if (codeConflict) {
+        return NextResponse.json({ error: 'Class code already exists' }, { status: 400 })
+      }
+    }
+
+    const updatedClass = await prisma.class.update({
+      where: { id },
+      data: {
+        name,
+        code,
+        description,
+        semester
+      },
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        _count: {
+          select: {
+            enrollments: true,
+            questions: true
+          }
+        }
+      }
+    })
+
+    // Transform to match frontend interface
+    const transformedClass = {
+      id: updatedClass.id,
+      name: updatedClass.name,
+      code: updatedClass.code,
+      description: updatedClass.description,
+      instructor: updatedClass.teacher.name,
+      semester: updatedClass.semester,
+      students: updatedClass._count.enrollments,
+      discussions: updatedClass._count.questions,
+      studentCount: updatedClass._count.enrollments,
+      recentActivity: `${updatedClass._count.questions} discussions`,
+      color: getClassColor(updatedClass.code)
+    }
+
+    return NextResponse.json({ class: transformedClass })
+  } catch (error) {
+    console.error('Error updating class:', error)
+    return NextResponse.json({ error: 'Failed to update class' }, { status: 500 })
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
