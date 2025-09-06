@@ -77,26 +77,44 @@ export function chunkText(
   return chunks;
 }
 
-// Simple semantic similarity function (can be replaced with proper embeddings later)
+// Enhanced semantic similarity function with better matching
 export function semanticSimilarity(query: string, text: string): number {
-  const queryWords = query.toLowerCase().split(/\s+/);
+  const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
   const textWords = text.toLowerCase().split(/\s+/);
   
+  if (queryWords.length === 0) return 0;
+  
   let matches = 0;
-  let totalQueryWords = queryWords.length;
+  let exactMatches = 0;
+  let partialMatches = 0;
   
   for (const queryWord of queryWords) {
-    if (queryWord.length < 3) continue; // Skip short words
+    let found = false;
     
     for (const textWord of textWords) {
-      if (textWord.includes(queryWord) || queryWord.includes(textWord)) {
-        matches++;
+      // Exact match (highest score)
+      if (textWord === queryWord) {
+        exactMatches++;
+        found = true;
+        break;
+      }
+      // Partial match (medium score)
+      else if (textWord.includes(queryWord) || queryWord.includes(textWord)) {
+        partialMatches++;
+        found = true;
         break;
       }
     }
+    
+    if (found) matches++;
   }
   
-  return totalQueryWords > 0 ? matches / totalQueryWords : 0;
+  // Weight exact matches more heavily
+  const exactScore = exactMatches / queryWords.length;
+  const partialScore = partialMatches / queryWords.length;
+  
+  // Return weighted score (exact matches count more)
+  return (exactScore * 1.0) + (partialScore * 0.5);
 }
 
 // Date extraction regex for exam dates
