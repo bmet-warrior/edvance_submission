@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Bot, CheckCircle, AlertCircle, ArrowRight, Loader2, FileText, MessageSquare, AlertTriangle } from 'lucide-react'
+import { X, Bot, CheckCircle, AlertCircle, ArrowRight, Loader2, FileText, MessageSquare, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import RichTextEditor from './RichTextEditor'
 
 interface AIQuestionModalProps {
@@ -30,6 +30,7 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
   const [loading, setLoading] = useState(false)
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
   const [feedbackLoading, setFeedbackLoading] = useState(false)
+  const [isAnswerExpanded, setIsAnswerExpanded] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -38,6 +39,7 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
       setQuestionContent('')
       setQuestionTags('')
       setAIResponse(null)
+      setIsAnswerExpanded(false)
     }
   }, [isOpen])
 
@@ -61,7 +63,19 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
       const data = await response.json()
       
       if (data.success) {
-        setAIResponse(data)
+        console.log('Raw API response:', data)
+        console.log('Raw confidence:', data.confidence, 'Type:', typeof data.confidence)
+        console.log('Converted confidence:', Number(data.confidence), 'Type:', typeof Number(data.confidence))
+        
+        setAIResponse({
+          aiResponse: data.aiResponse,
+          confidence: Number(data.confidence),
+          sources: data.sources,
+          shouldPostToForum: data.shouldPostToForum,
+          recommendation: data.recommendation,
+          hasAnswer: data.hasAnswer,
+          showFeedback: data.showFeedback
+        })
         setCurrentStep('result')
       } else {
         console.error('AI analysis failed:', data.error)
@@ -310,7 +324,29 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
                     aiResponse.confidence > 0.95 ? 'text-green-900' : 'text-yellow-900'
                   }`}>
                     <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {aiResponse.aiResponse}
+                      {aiResponse.aiResponse.length > 300 && !isAnswerExpanded ? (
+                        <>
+                          {aiResponse.aiResponse.substring(0, 300)}...
+                          <button
+                            onClick={() => setIsAnswerExpanded(true)}
+                            className="ml-2 inline-flex items-center text-blue-600 hover:text-blue-800 font-medium text-xs"
+                          >
+                            Show more <ChevronDown className="h-3 w-3 ml-1" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {aiResponse.aiResponse}
+                          {aiResponse.aiResponse.length > 300 && isAnswerExpanded && (
+                            <button
+                              onClick={() => setIsAnswerExpanded(false)}
+                              className="ml-2 inline-flex items-center text-blue-600 hover:text-blue-800 font-medium text-xs"
+                            >
+                              Show less <ChevronUp className="h-3 w-3 ml-1" />
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -350,19 +386,37 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
                   <h4 className="text-sm font-medium text-gray-900 mb-3">Sources:</h4>
                   <div className="space-y-2">
                     {aiResponse.sources.slice(0, 3).map((source, index) => (
-                      <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                      <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                         {source.type === 'document' ? (
                           <FileText className="h-4 w-4 text-blue-600 mt-0.5" />
                         ) : (
                           <MessageSquare className="h-4 w-4 text-green-600 mt-0.5" />
                         )}
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {source.document?.title || source.question?.title}
-                          </p>
-                          <p className="text-xs text-gray-600">
-                            {source.type === 'document' ? 'Course Material' : 'Past Discussion'}
-                          </p>
+                          <button
+                            onClick={() => {
+                              if (source.type === 'document' && source.document?.filename) {
+                                // Get current user info for document access
+                                const user = JSON.parse(localStorage.getItem('user') || '{}')
+                                // Open document in new tab with required parameters
+                                window.open(`/api/documents/${source.document.filename}?userId=${user.id}&classId=${classId}`, '_blank')
+                              } else if (source.type === 'qa' && source.questionId) {
+                                // Navigate to question page
+                                window.open(`/class/${classId}?question=${source.questionId}`, '_blank')
+                              }
+                            }}
+                            className="text-left w-full hover:text-blue-600 transition-colors"
+                          >
+                            <p className="text-sm font-medium text-gray-900 hover:text-blue-600">
+                              {source.document?.title || source.question?.title || source.title || 'Unknown Source'}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              {source.type === 'document' ? 'Course Material - Click to view' : 'Past Discussion - Click to view'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Similarity: {(source.similarity * 100).toFixed(1)}%
+                            </p>
+                          </button>
                         </div>
                       </div>
                     ))}

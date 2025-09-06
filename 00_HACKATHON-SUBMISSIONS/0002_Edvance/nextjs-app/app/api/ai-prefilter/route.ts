@@ -32,6 +32,59 @@ interface Answer {
   isAiGenerated: boolean
 }
 
+// AI-powered information extraction function
+async function extractSpecificInfo(query: string, documentContent: string): Promise<string> {
+  try {
+    const prompt = `You are an AI assistant helping students find specific information from course documents.
+
+STUDENT QUESTION: "${query}"
+
+DOCUMENT CONTENT:
+${documentContent}
+
+INSTRUCTIONS:
+1. Read the document content carefully
+2. Find the specific information that directly answers the student's question
+3. Provide a BRIEF, DIRECT answer - just the key information requested
+4. For simple questions (like "what is the referencing style?"), give a short answer (e.g., "IEEE citation style")
+5. If the information is not in the document, respond with "Information not found in the document"
+6. Be specific with dates, deadlines, requirements, etc.
+
+ANSWER:`
+
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama3.2:1b',
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.1,
+          max_tokens: 200
+        }
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const answer = data.response?.trim() || ''
+    
+    // Only return if we got a meaningful answer
+    if (answer && !answer.includes('Information not found') && answer.length > 10) {
+      return answer
+    }
+    
+    return ''
+  } catch (error) {
+    console.log('AI extraction error:', error)
+    return ''
+  }
+}
+
 // Simple text similarity function for demo (in production, use embeddings)
 function calculateSimilarity(text1: string, text2: string): number {
   const words1 = text1.toLowerCase().split(/\s+/)
@@ -251,15 +304,40 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       console.log('Could not fetch class accuracy data:', error)
     }
     
-    // Filter sources with very low thresholds to ensure relevance
+    // Filter sources with improved thresholds and keyword-based relevance
+    const queryKeywords = query.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3) // Only meaningful words
+    
     const relevantSources = sources.filter(source => {
-      if (source.type === 'qa') {
-        // Very low threshold for past Q&As to ensure relevance
-        return source.similarity > 0.20
-      } else {
-        // Very low threshold for documents to ensure relevance
-        return source.similarity > 0.30
+      // First check similarity threshold
+      const meetsThreshold = source.type === 'qa' ? source.similarity > 0.50 : source.similarity > 0.60
+      
+      if (!meetsThreshold) return false
+      
+      // Then check keyword relevance
+      const sourceText = (source.document?.content || source.answer?.content || source.question?.title || '').toLowerCase()
+      const hasRelevantKeywords = queryKeywords.some(keyword => 
+        sourceText.includes(keyword)
+      )
+      
+      // For assignment-related queries, be more specific
+      if (queryKeywords.includes('deadline') || queryKeywords.includes('due')) {
+        // Exclude word count questions when asking about deadlines
+        if (sourceText.includes('word count') || sourceText.includes('page count')) {
+          return false
+        }
       }
+      
+      // For word count queries, exclude deadline questions
+      if (queryKeywords.includes('word') && queryKeywords.includes('count')) {
+        if (sourceText.includes('deadline') || sourceText.includes('due date')) {
+          return false
+        }
+      }
+      
+      return hasRelevantKeywords
     })
     
     console.log(`Filtered sources: ${relevantSources.length} total (${relevantSources.filter(s => s.type === 'qa').length} Q&As, ${relevantSources.filter(s => s.type === 'document').length} documents)`)
@@ -411,13 +489,38 @@ async function generateAIResponse(query: string, sources: any[], classId: string
     let response = ''
     
     // Provide concise, direct responses for any matches above the threshold
-    if (bestSource.document && bestSource.similarity > 0.30) {
+    if (bestSource.document && bestSource.similarity > 0.60) {
       // Extract specific information from document content
       const documentContent = bestSource.document.content
       const queryLower = query.toLowerCase()
       
       // Try to extract specific information based on the question
       let extractedAnswer = ''
+      
+      // General assignment deadline questions
+      if (queryLower.includes('deadline') || queryLower.includes('due') || queryLower.includes('due date')) {
+        // Look for various deadline patterns
+        const deadlinePatterns = [
+          /Due Date: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
+          /Deadline: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
+          /Due: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
+          /Submission Deadline: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
+          /Assignment due: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
+          /(\d{1,2} \w+ \d{4})/i  // Fallback to any date pattern
+        ]
+        
+        for (const pattern of deadlinePatterns) {
+          const match = documentContent.match(pattern)
+          if (match) {
+            if (match[1] && match[2]) {
+              extractedAnswer = `The assignment deadline is Week ${match[1]} - ${match[2]}.`
+            } else if (match[1]) {
+              extractedAnswer = `The assignment deadline is ${match[1]}.`
+            }
+            break
+          }
+        }
+      }
       
       // Early feedback task questions
       if (queryLower.includes('early feedback') && queryLower.includes('due')) {
@@ -509,14 +612,25 @@ async function generateAIResponse(query: string, sources: any[], classId: string
         }
       }
       
-      // If we found a specific answer, use it; otherwise use the excerpt
+      // If we found a specific answer, use it; otherwise try AI interpretation
       if (extractedAnswer) {
         response = extractedAnswer
       } else {
-        // Fallback to excerpt for general questions
-        response = bestSource.excerpt.substring(0, 200) + (bestSource.excerpt.length > 200 ? '...' : '')
+        // Try to use AI to extract specific information from the document
+        try {
+          const aiExtraction = await extractSpecificInfo(query, documentContent)
+          if (aiExtraction && aiExtraction.length > 0) {
+            response = aiExtraction
+          } else {
+            // Fallback to full excerpt
+            response = bestSource.excerpt
+          }
+        } catch (error) {
+          console.log('AI extraction failed, using excerpt:', error)
+          response = bestSource.excerpt
+        }
       }
-    } else if (bestSource.answer && bestSource.similarity > 0.20) {
+    } else if (bestSource.answer && bestSource.similarity > 0.50) {
       // Past Q&A matches - provide concise response
       const answerAuthor = bestSource.answer.author?.name || 'a classmate'
       const questionTitle = bestSource.question?.title || 'a previous question'
@@ -524,7 +638,7 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       // Clean HTML formatting from the answer content
       const cleanContent = bestSource.answer.content.replace(/<[^>]*>/g, '').trim()
       
-      response = `This question was answered previously by ${answerAuthor}: ${cleanContent.substring(0, 150)}${cleanContent.length > 150 ? '...' : ''}`
+      response = `This question was answered previously by ${answerAuthor}: ${cleanContent}`
     } else {
       // If confidence is not high enough, don't provide an answer
       console.log('No matches above threshold - returning no answer with 0 confidence')
@@ -535,7 +649,7 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       }
     }
     
-    // Enhance sources with additional information for Q&As
+    // Enhance sources with additional information
     const enhancedSources = relevantSources.map(source => {
       if (source.type === 'qa' && source.question) {
         return {
@@ -543,6 +657,13 @@ async function generateAIResponse(query: string, sources: any[], classId: string
           title: source.question.title,
           questionId: source.question.id,
           relevance: `Answered by ${source.answer.author?.name || 'a classmate'} in this discussion`
+        }
+      } else if (source.type === 'document' && source.document) {
+        return {
+          ...source,
+          title: source.document.title,
+          documentId: source.document.id,
+          relevance: `Course material document`
         }
       }
       return source
