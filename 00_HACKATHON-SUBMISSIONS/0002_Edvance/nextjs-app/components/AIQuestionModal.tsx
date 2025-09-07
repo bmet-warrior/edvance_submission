@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Bot, CheckCircle, AlertCircle, ArrowRight, Loader2, FileText, MessageSquare, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Bot, CheckCircle, AlertCircle, ArrowRight, Loader2, FileText, MessageSquare, AlertTriangle, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import RichTextEditor from './RichTextEditor'
 
 interface AIQuestionModalProps {
@@ -143,6 +143,28 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
       console.error('Error submitting feedback:', error)
     } finally {
       setFeedbackLoading(false)
+    }
+  }
+
+  const handleDownloadDocument = async (filename: string) => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      if (!user.id) {
+        throw new Error('User not authenticated')
+      }
+
+      // Create download URL
+      const downloadUrl = `/api/documents/${encodeURIComponent(filename)}?userId=${user.id}&classId=${classId}`
+      
+      // Create a temporary link element and trigger download
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error('Error downloading document:', error)
     }
   }
 
@@ -305,11 +327,6 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
                         {aiResponse.confidence > 0.95 ? '🎯 Exact Answer Found!' : '💡 Related Information Found'}
                       </h3>
                       <div className="flex items-center space-x-2">
-                        <span className={`text-xs px-2 py-1 rounded font-medium ${
-                          aiResponse.confidence > 0.95 ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          Confidence: {Math.round(aiResponse.confidence * 100)}%
-                        </span>
                         {aiResponse.confidence > 0.95 && (
                           <span className="text-xs px-2 py-1 rounded bg-blue-200 text-blue-800 font-medium">
                             From Course Materials
@@ -387,37 +404,46 @@ export default function AIQuestionModal({ isOpen, onClose, classId, onProceedToF
                   <div className="space-y-2">
                     {aiResponse.sources.slice(0, 3).map((source, index) => (
                       <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        {source.type === 'document' ? (
+                        {source.type === 'document' && source.document?.filename ? (
+                          <button
+                            onClick={() => handleDownloadDocument(source.document.filename)}
+                            className="h-4 w-4 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors mt-0.5"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        ) : source.type === 'document' ? (
                           <FileText className="h-4 w-4 text-blue-600 mt-0.5" />
                         ) : (
                           <MessageSquare className="h-4 w-4 text-green-600 mt-0.5" />
                         )}
                         <div className="flex-1">
-                          <button
-                            onClick={() => {
-                              if (source.type === 'document' && source.document?.filename) {
-                                // Get current user info for document access
-                                const user = JSON.parse(localStorage.getItem('user') || '{}')
-                                // Open document in new tab with required parameters
-                                window.open(`/api/documents/${source.document.filename}?userId=${user.id}&classId=${classId}`, '_blank')
-                              } else if (source.type === 'qa' && source.questionId) {
-                                // Navigate to question page
-                                window.open(`/class/${classId}?question=${source.questionId}`, '_blank')
-                              }
-                            }}
-                            className="text-left w-full hover:text-blue-600 transition-colors"
-                          >
-                            <p className="text-sm font-medium text-gray-900 hover:text-blue-600">
+                          {source.type === 'document' && source.document?.filename ? (
+                            <button
+                              onClick={() => handleDownloadDocument(source.document.filename)}
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors text-left w-full"
+                            >
+                              {source.document?.title || source.title || 'Unknown Source'}
+                            </button>
+                          ) : source.type === 'qa' && source.questionId ? (
+                            <button
+                              onClick={() => window.open(`/questions/${source.questionId}`, '_blank')}
+                              className="text-sm font-medium text-green-600 hover:text-green-800 hover:underline cursor-pointer transition-colors text-left w-full"
+                            >
+                              {source.question?.title || source.title || 'Unknown Source'}
+                            </button>
+                          ) : (
+                            <p className="text-sm font-medium text-gray-900">
                               {source.document?.title || source.question?.title || source.title || 'Unknown Source'}
                             </p>
-                            <p className="text-xs text-gray-600">
-                              {source.type === 'document' ? 'Course Material - Click to view' : 'Past Discussion - Click to view'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Similarity: {(source.similarity * 100).toFixed(1)}%
-                            </p>
-                          </button>
+                          )}
+                          <p className="text-xs text-gray-600">
+                            {source.type === 'document' ? 'Course Material - Click to download' : 'Past Discussion - Click to view'}
+                          </p>
                         </div>
+                        {source.type === 'document' && source.document?.filename && (
+                          <Download className="h-4 w-4 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors" 
+                                   onClick={() => handleDownloadDocument(source.document.filename)} />
+                        )}
                       </div>
                     ))}
                   </div>

@@ -147,6 +147,7 @@ async function searchDocuments(query: string, classId: string): Promise<{ docume
           id: doc.id,
           classId: classId,
           title: doc.title,
+          filename: doc.filename,
           content: doc.content,
           documentType: doc.documentType,
           createdAt: doc.createdAt.toISOString()
@@ -156,7 +157,7 @@ async function searchDocuments(query: string, classId: string): Promise<{ docume
       }
     })
     
-    const filteredResults = results.filter(result => result.similarity > 0.1).sort((a, b) => b.similarity - a.similarity)
+    const filteredResults = results.filter(result => result.similarity > 0.05).sort((a, b) => b.similarity - a.similarity)
     
     console.log('Top 3 results:')
     filteredResults.slice(0, 3).forEach((result, i) => {
@@ -262,7 +263,7 @@ async function searchPastQAs(query: string, classId: string): Promise<{ question
         }
       })
     
-    const filteredResults = results.filter(result => result.similarity > 0.1).sort((a, b) => b.similarity - a.similarity)
+    const filteredResults = results.filter(result => result.similarity > 0.05).sort((a, b) => b.similarity - a.similarity)
     
     console.log(`Found ${filteredResults.length} past Q&A matches for query: "${query}"`)
     if (filteredResults.length > 0) {
@@ -311,15 +312,16 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       .filter(word => word.length > 3) // Only meaningful words
     
     const relevantSources = sources.filter(source => {
-      // First check similarity threshold
-      const meetsThreshold = source.type === 'qa' ? source.similarity > 0.50 : source.similarity > 0.60
+      // First check similarity threshold - lowered to be more permissive
+      const meetsThreshold = source.type === 'qa' ? source.similarity > 0.30 : source.similarity > 0.40
       
       if (!meetsThreshold) return false
       
-      // Then check keyword relevance
+      // Then check keyword relevance - be more flexible with keyword matching
       const sourceText = (source.document?.content || source.answer?.content || source.question?.title || '').toLowerCase()
       const hasRelevantKeywords = queryKeywords.some(keyword => 
-        sourceText.includes(keyword)
+        sourceText.includes(keyword) || 
+        sourceText.includes(keyword.substring(0, Math.max(3, keyword.length - 2))) // Allow partial matches
       )
       
       // For assignment-related queries, be more specific
@@ -489,7 +491,7 @@ async function generateAIResponse(query: string, sources: any[], classId: string
     let response = ''
     
     // Provide concise, direct responses for any matches above the threshold
-    if (bestSource.document && bestSource.similarity > 0.60) {
+    if (bestSource.document && bestSource.similarity > 0.40) {
       // Extract specific information from document content
       const documentContent = bestSource.document.content
       const queryLower = query.toLowerCase()
@@ -523,10 +525,16 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       }
       
       // Early feedback task questions
-      if (queryLower.includes('early feedback') && queryLower.includes('due')) {
+      if (queryLower.includes('early feedback') && (queryLower.includes('due') || queryLower.includes('when'))) {
         const dueMatch = documentContent.match(/Due Date: Week (\d+) – (\d{1,2} \w+ \d{4})/i)
         if (dueMatch) {
           extractedAnswer = `The early feedback task is due Week ${dueMatch[1]} - ${dueMatch[2]}.`
+        } else {
+          // Try alternative patterns
+          const altMatch = documentContent.match(/Early Feedback Task[^]*?Week (\d+)[^]*?(\d{1,2} \w+ \d{4})/i)
+          if (altMatch) {
+            extractedAnswer = `The early feedback task is due Week ${altMatch[1]} - ${altMatch[2]}.`
+          }
         }
       } else if (queryLower.includes('early feedback') && queryLower.includes('released')) {
         const releasedMatch = documentContent.match(/Release Date: Week (\d+) – (\d{1,2} \w+ \d{4})/i)
@@ -630,7 +638,7 @@ async function generateAIResponse(query: string, sources: any[], classId: string
           response = bestSource.excerpt
         }
       }
-    } else if (bestSource.answer && bestSource.similarity > 0.50) {
+    } else if (bestSource.answer && bestSource.similarity > 0.30) {
       // Past Q&A matches - provide concise response
       const answerAuthor = bestSource.answer.author?.name || 'a classmate'
       const questionTitle = bestSource.question?.title || 'a previous question'

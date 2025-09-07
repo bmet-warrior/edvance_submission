@@ -182,17 +182,6 @@ export default function AIQuestionScreeningModal({ isOpen, onClose, classId, onP
     await handleAnalyzeQuestion()
   }
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-green-600 bg-green-100'
-    if (confidence >= 60) return 'text-yellow-600 bg-yellow-100'
-    return 'text-red-600 bg-red-100'
-  }
-
-  const getConfidenceLabel = (confidence: number) => {
-    if (confidence >= 80) return 'High Confidence'
-    if (confidence >= 60) return 'Medium Confidence'
-    return 'Low Confidence'
-  }
 
   const handleDownloadDocument = async (filename: string) => {
     try {
@@ -461,36 +450,6 @@ export default function AIQuestionScreeningModal({ isOpen, onClose, classId, onP
                     </div>
                   </div>
                   
-                  {/* Confidence Info - Smaller and Below */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        {aiResponse.confidence >= 80 ? (
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <AlertCircle className="h-4 w-4 text-yellow-600" />
-                        )}
-                        <span className={`text-xs px-2 py-1 rounded font-medium ${getConfidenceColor(aiResponse.confidence)}`}>
-                          {getConfidenceLabel(aiResponse.confidence)}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          {Math.round(aiResponse.confidence)}% confidence
-                        </span>
-                      </div>
-                      
-                      {/* Small Confidence Bar */}
-                      <div className="w-20 bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
-                            aiResponse.confidence >= 80 ? 'bg-green-500' : 
-                            aiResponse.confidence >= 60 ? 'bg-yellow-500' : 
-                            'bg-red-500'
-                          }`}
-                          style={{ width: `${aiResponse.confidence}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -521,9 +480,9 @@ export default function AIQuestionScreeningModal({ isOpen, onClose, classId, onP
                   <div className="space-y-2">
                     {aiResponse.sources.slice(0, 3).map((source, index) => (
                       <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                        {source.type === 'document' && source.filename ? (
+                        {source.type === 'document' && source.document?.filename ? (
                           <button
-                            onClick={() => source.filename && handleDownloadDocument(source.filename)}
+                            onClick={() => source.document?.filename && handleDownloadDocument(source.document.filename)}
                             className="h-4 w-4 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors mt-0.5"
                           >
                             <FileText className="h-4 w-4" />
@@ -535,9 +494,9 @@ export default function AIQuestionScreeningModal({ isOpen, onClose, classId, onP
                           <MessageSquare className="h-4 w-4 text-green-600 mt-0.5" />
                         )}
                         <div className="flex-1">
-                          {source.type === 'document' && source.filename ? (
+                          {source.type === 'document' && source.document?.filename ? (
                             <button
-                              onClick={() => source.filename && handleDownloadDocument(source.filename)}
+                              onClick={() => source.document?.filename && handleDownloadDocument(source.document.filename)}
                               className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
                             >
                               {source.title}
@@ -558,9 +517,9 @@ export default function AIQuestionScreeningModal({ isOpen, onClose, classId, onP
                             {source.relevance}
                           </p>
                         </div>
-                        {source.type === 'document' && source.filename && (
+                        {source.type === 'document' && source.document?.filename && (
                           <Download className="h-4 w-4 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors" 
-                                   onClick={() => source.filename && handleDownloadDocument(source.filename)} />
+                                   onClick={() => source.document?.filename && handleDownloadDocument(source.document.filename)} />
                         )}
                       </div>
                     ))}
