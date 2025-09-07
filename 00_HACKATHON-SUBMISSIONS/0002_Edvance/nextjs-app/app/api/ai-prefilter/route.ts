@@ -46,9 +46,13 @@ INSTRUCTIONS:
 1. Read the document content carefully
 2. Find the specific information that directly answers the student's question
 3. Provide a BRIEF, DIRECT answer - just the key information requested
-4. For simple questions (like "what is the referencing style?"), give a short answer (e.g., "IEEE citation style")
-5. If the information is not in the document, respond with "Information not found in the document"
-6. Be specific with dates, deadlines, requirements, etc.
+4. For lecture schedule questions: If asked about "Week X", find "Lecture X" in the schedule. Answer in format: "The lecture topic in Week X is [Topic Name]"
+5. For assignment questions, answer in format: "The assignment deadline is [Date]" or "The assignment is worth [Percentage]"
+6. For exam questions, answer in format: "The exam is on [Date]" or "The exam covers [Topics]"
+7. If the information is not in the document, respond with "Information not found in the document"
+8. Be specific with dates, deadlines, requirements, etc.
+9. Do NOT repeat the entire document - only provide the specific answer
+10. IMPORTANT: Week numbers correspond to Lecture numbers (Week 1 = Lecture 1, Week 4 = Lecture 4, etc.)
 
 ANSWER:`
 
@@ -61,7 +65,7 @@ ANSWER:`
         stream: false,
         options: {
           temperature: 0.1,
-          max_tokens: 200
+          max_tokens: 150
         }
       })
     })
@@ -73,9 +77,12 @@ ANSWER:`
     const data = await response.json()
     const answer = data.response?.trim() || ''
     
+    // Clean up the response - remove any trailing "Information not found" text
+    const cleanAnswer = answer.replace(/Information not found in the document.*$/i, '').trim()
+    
     // Only return if we got a meaningful answer
-    if (answer && !answer.includes('Information not found') && answer.length > 10) {
-      return answer
+    if (cleanAnswer && cleanAnswer.length > 10 && !cleanAnswer.includes('Information not found')) {
+      return cleanAnswer
     }
     
     return ''
@@ -324,7 +331,23 @@ async function generateAIResponse(query: string, sources: any[], classId: string
         sourceText.includes(keyword.substring(0, Math.max(3, keyword.length - 2))) // Allow partial matches
       )
       
-      // For assignment-related queries, be more specific
+      // For assignment-related queries, prioritize documents over Q&As
+      if (queryKeywords.includes('assignment') || queryKeywords.includes('word') || queryKeywords.includes('page') || queryKeywords.includes('count')) {
+        // If this is a document about assignments, prioritize it
+        if (source.type === 'document' && sourceText.includes('assignment')) {
+          return true
+        }
+        // If this is a Q&A about assignments, include it
+        if (source.type === 'qa' && sourceText.includes('assignment')) {
+          return true
+        }
+        // Exclude Q&As that are clearly about different topics (like portfolio theory)
+        if (source.type === 'qa' && (sourceText.includes('portfolio') || sourceText.includes('efficient') || sourceText.includes('risk'))) {
+          return false
+        }
+      }
+      
+      // For deadline-related queries, be more specific
       if (queryKeywords.includes('deadline') || queryKeywords.includes('due')) {
         // Exclude word count questions when asking about deadlines
         if (sourceText.includes('word count') || sourceText.includes('page count')) {
@@ -499,8 +522,19 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       // Try to extract specific information based on the question
       let extractedAnswer = ''
       
+      // Lecture schedule questions - handle these with pattern matching for accuracy
+      if (queryLower.includes('lecture topic') && queryLower.includes('week')) {
+        const weekMatch = queryLower.match(/week (\d+)/)
+        if (weekMatch) {
+          const weekNumber = parseInt(weekMatch[1])
+          const lectureMatch = documentContent.match(new RegExp(`Lecture ${weekNumber} - ([^\\n]+)`, 'i'))
+          if (lectureMatch) {
+            extractedAnswer = `The lecture topic in Week ${weekNumber} is ${lectureMatch[1].trim()}.`
+          }
+        }
+      }
       // General assignment deadline questions
-      if (queryLower.includes('deadline') || queryLower.includes('due') || queryLower.includes('due date')) {
+      else if (queryLower.includes('deadline') || queryLower.includes('due') || queryLower.includes('due date')) {
         // Look for various deadline patterns
         const deadlinePatterns = [
           /Due Date: Week (\d+) – (\d{1,2} \w+ \d{4})/i,
@@ -550,6 +584,18 @@ async function generateAIResponse(query: string, sources: any[], classId: string
         const coverMatch = documentContent.match(/Task: ([^.]*multiple choice[^.]*)/i)
         if (coverMatch) {
           extractedAnswer = `${coverMatch[1].trim()}.`
+        }
+      }
+      // Group assignment word count and page limit questions
+      else if (queryLower.includes('group assignment') && (queryLower.includes('word') || queryLower.includes('page') || queryLower.includes('count') || queryLower.includes('limit'))) {
+        const wordMatch = documentContent.match(/Group Assignment[^]*?(\d{1,3}(?:,\d{3})*)\s*words?\s*maximum/i)
+        const pageMatch = documentContent.match(/Group Assignment[^]*?up to (\d+)\s*pages?/i)
+        if (wordMatch && pageMatch) {
+          extractedAnswer = `The group assignment has a maximum of ${wordMatch[1]} words and up to ${pageMatch[1]} pages including appendices.`
+        } else if (wordMatch) {
+          extractedAnswer = `The group assignment has a maximum of ${wordMatch[1]} words.`
+        } else if (pageMatch) {
+          extractedAnswer = `The group assignment has a limit of up to ${pageMatch[1]} pages including appendices.`
         }
       }
       // Group assignment questions
@@ -624,18 +670,18 @@ async function generateAIResponse(query: string, sources: any[], classId: string
       if (extractedAnswer) {
         response = extractedAnswer
       } else {
-        // Try to use AI to extract specific information from the document
+        // Always try AI extraction first for better responses
         try {
           const aiExtraction = await extractSpecificInfo(query, documentContent)
           if (aiExtraction && aiExtraction.length > 0) {
             response = aiExtraction
           } else {
-            // Fallback to full excerpt
-            response = bestSource.excerpt
+            // If AI extraction fails, provide a more helpful response
+            response = `Based on the course materials, I found relevant information but couldn't extract a specific answer. Please check the document "${bestSource.document.title}" for more details.`
           }
         } catch (error) {
-          console.log('AI extraction failed, using excerpt:', error)
-          response = bestSource.excerpt
+          console.log('AI extraction failed:', error)
+          response = `Based on the course materials, I found relevant information but couldn't extract a specific answer. Please check the document "${bestSource.document.title}" for more details.`
         }
       }
     } else if (bestSource.answer && bestSource.similarity > 0.30) {
